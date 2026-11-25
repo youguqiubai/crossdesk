@@ -400,7 +400,15 @@ void GuiApplication::TickLocalHost() {
           local_host_status_.trusted_dirty = false;
         }
         if (IsCurrentSessionUserDesktopActive()) {
-          privacy_.CaptureChanged(status.at("capture"));
+          // In the persistent-host deployment the GUI owns screen capture while
+          // the service does not. The service still reports capture=false, and
+          // applying that unconditionally overwrites the capturer's own report,
+          // which leaves the privacy screen permanently unusable
+          // ("No desktop capture available"). Only trust the host's value when
+          // the host is the one capturing, or when this GUI is not.
+          const bool host_captures = status.at("capture").get<bool>();
+          if (host_captures || !screen_capturer_is_started_)
+            privacy_.CaptureChanged(host_captures);
           privacy_.ResumeAfterDesktopRecovery();
         } else privacy_.SuspendForDesktop();
       } else if (op == "data") {

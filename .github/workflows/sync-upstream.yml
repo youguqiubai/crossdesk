@@ -26,6 +26,5 @@ jobs:
           git fetch upstream --tags --prune
 
           git checkout mcp
-          git merge --ff-only upstream/mcp
-
+          git merge --no-edit -m "chore: sync upstream" upstream/mcp
           git push origin mcp --tags

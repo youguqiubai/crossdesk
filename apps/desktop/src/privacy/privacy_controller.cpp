@@ -132,7 +132,16 @@ void PrivacyController::DisableLocked() {
   SetState(PrivacyState::stopping, "Restoring local desktop and input");
   WakeLocked();
 }
-void PrivacyController::Disconnected() { Disable(); }
+void PrivacyController::Disconnected() {
+  {
+    std::lock_guard lock(mutex_);
+    // A new session restarts the capturer, whose Init() reports capture=false
+    // before the stream is up. Reset here so CaptureChanged() can recognise
+    // that as an initial capture instead of treating it as a capture fault.
+    capture_running_ = false;
+  }
+  Disable();
+}
 void PrivacyController::SuspendForDesktop() {
   std::lock_guard lock(mutex_);
   if (quit_) return;

@@ -117,6 +117,7 @@ struct RemoteSessionView: View {
                         keyboardGeometry: keyboardInputVisible ? keyboardGeometry : nil,
                         videoSize: session.displayGeometrySize,
                         controlMode: session.mouseControlMode,
+                        externalPointerMode: session.externalPointerMode,
                         remoteCursorPosition: session.remoteCursorPosition,
                         remoteCursorPositionRevision: session.remoteCursorPositionRevision,
                         viewportScale: viewport.scale,
@@ -151,6 +152,9 @@ struct RemoteSessionView: View {
                             cursorPosition = CGPoint(x: CGFloat(x), y: CGFloat(y))
                             session.bridge.sendScrollX(x, y: y,
                                                        deltaX: dx, deltaY: dy)
+                        },
+                        key: { keyCode, isDown in
+                            session.sendKeyState(keyCode, isDown: isDown)
                         }
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -1289,6 +1293,14 @@ private struct FloatingSessionMenu: View {
                             session.mouseControlMode = session.mouseControlMode == .relative
                                 ? .absolute : .relative
                         }
+                    )
+                    FloatingControlButton(
+                        title: session.externalPointerMode
+                            ? NSLocalizedString("键鼠模式", comment: "")
+                            : NSLocalizedString("触控模式", comment: ""),
+                        symbol: "computermouse.fill",
+                        selected: session.externalPointerMode,
+                        action: { session.externalPointerMode.toggle() }
                     )
 
                     Menu {

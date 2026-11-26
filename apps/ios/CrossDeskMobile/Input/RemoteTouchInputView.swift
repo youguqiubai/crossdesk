@@ -74,6 +74,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
     let keyboardGeometry: RemoteKeyboardGeometry?
     let videoSize: CGSize
     let controlMode: MouseControlMode
+    let externalPointerMode: Bool
     let remoteCursorPosition: CGPoint?
     let remoteCursorPositionRevision: UInt64
     let viewportScale: CGFloat
@@ -84,6 +85,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
     let leftUp: (Float, Float) -> Void
     let rightClick: (Float, Float) -> Void
     let scroll: (Float, Float, Int, Int) -> Void
+    let key: (UInt, Bool) -> Void
 
     func makeUIView(context: Context) -> RemoteTouchSurface {
         RemoteTouchSurface()
@@ -94,6 +96,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
         view.keyboardGeometry = keyboardGeometry
         view.videoSize = videoSize
         view.controlMode = controlMode
+        view.externalPointerMode = externalPointerMode
         view.setViewport(scale: viewportScale, offset: viewportOffset)
         view.onViewportChanged = viewportChanged
         view.onMove = move
@@ -101,6 +104,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
         view.onLeftUp = leftUp
         view.onRightClick = rightClick
         view.onScroll = scroll
+        view.onKey = key
         view.synchronizeRemoteCursor(remoteCursorPosition,
                                      revision: remoteCursorPositionRevision)
     }
@@ -191,6 +195,35 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
     var onScroll: ((Float, Float, Int, Int) -> Void)?
     var onViewportChanged: ((CGFloat, CGSize) -> Void)?
 
+    /// External keyboard/mouse mode. iPadOS forwards mouse clicks and wheel
+    /// events through this view as well, and the touch gestures that emulate
+    /// them compete for the same events. Disabling the touch recognizers keeps
+    /// the physical mouse authoritative while hover tracking stays active.
+    var externalPointerMode = false {
+        didSet {
+            guard oldValue != externalPointerMode else { return }
+            for recognizer in touchRecognizers {
+                recognizer.isEnabled = !externalPointerMode
+            }
+            relativePanActive = false
+            heldDragPoint = nil
+            heldDragLastLocation = nil
+            viewportPanActive = false
+            if externalPointerMode {
+                becomeFirstResponder()
+            } else {
+                winKeyDown = false
+                resignFirstResponder()
+            }
+        }
+    }
+    /// Physical keyboard events in external pointer mode. The receiver is the
+    /// remote desktop, so keys are forwarded verbatim instead of typing into a
+    /// local text field.
+    var onKey: ((UInt, Bool) -> Void)?
+    private var winKeyDown = false
+    private var touchRecognizers: [UIGestureRecognizer] = []
+
     private var fallbackCursorPoint: (Float, Float) = (0.5, 0.5)
     private var relativeCursorPoint: (Float, Float) {
         get { mouseInput.map { ($0.x, $0.y) } ?? fallbackCursorPoint }
@@ -263,16 +296,133 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         let wheel = UIPanGestureRecognizer(target: self, action: #selector(handleWheel(_:)))
         wheel.minimumNumberOfTouches = 2
         wheel.maximumNumberOfTouches = 2
+        // Trackpad two-finger scrolling arrives as continuous scroll events.
+        wheel.allowedScrollTypesMask = .continuous
         wheel.delegate = self
         addGestureRecognizer(wheel)
+
+        // A Bluetooth mouse wheel arrives as discrete scroll events, which the
+        // two-finger pan above never receives. Handle it separately so an
+        // external mouse can scroll without any touch input.
+        let mouseWheel = UIPanGestureRecognizer(target: self,
+                                                action: #selector(handleMouseWheel(_:)))
+        mouseWheel.allowedScrollTypesMask = .discrete
+        mouseWheel.allowedTouchTypes = []
+        mouseWheel.delegate = self
+        addGestureRecognizer(mouseWheel)
 
         let hover = UIHoverGestureRecognizer(target: self,
                                              action: #selector(handleHover(_:)))
         addGestureRecognizer(hover)
+
+        touchRecognizers = [tap, rightTap, drag, heldDrag, pinch, trackpadPinch, wheel]
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override var canBecomeFirstResponder: Bool { externalPointerMode }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // becomeFirstResponder() fails before the view joins a window, so the
+        // mode change is re-applied once it does.
+        if window != nil && externalPointerMode && !isFirstResponder {
+            becomeFirstResponder()
+        }
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard externalPointerMode else {
+            super.pressesBegan(presses, with: event)
+            return
+        }
+        var handled = false
+        for press in presses {
+            guard let key = press.key,
+                  let mapped = hardwareKey(key, down: true) else { continue }
+            handled = true
+            onKey?(mapped, true)
+        }
+        if !handled { super.pressesBegan(presses, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard externalPointerMode else {
+            super.pressesEnded(presses, with: event)
+            return
+        }
+        var handled = false
+        for press in presses {
+            guard let key = press.key,
+                  let mapped = hardwareKey(key, down: false) else { continue }
+            handled = true
+            onKey?(mapped, false)
+        }
+        if !handled { super.pressesEnded(presses, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        pressesEnded(presses, with: event)
+    }
+
+    /// Map a USB HID usage to a Windows virtual-key code. iPadOS delivers
+    /// hardware keys as HID usages, while the remote host expects VK codes.
+    private func hardwareKey(_ key: UIKey, down: Bool) -> UInt? {
+        let hid = key.keyCode.rawValue
+        // iPadOS reserves the right Alt for system shortcuts; expose it as Esc
+        // so a remote desktop keeps an escape key.
+        if hid == 0xE6 { return 0x1B }
+        // Win+Caps is intercepted by iPadOS; send Tab while Win is held.
+        if hid == 0x39 && winKeyDown { return 0x09 }
+        if hid == 0xE3 || hid == 0xE7 {
+            winKeyDown = down
+            return 0x5B
+        }
+        return Self.windowsVirtualKey(hid: hid)
+    }
+
+    private static func windowsVirtualKey(hid: Int) -> UInt? {
+        switch hid {
+        case 0x04...0x1D: return UInt(0x41 + (hid - 0x04))   // A-Z
+        case 0x1E...0x26: return UInt(0x31 + (hid - 0x1E))   // 1-9
+        case 0x27: return 0x30                                // 0
+        case 0x28: return 0x0D                                // Enter
+        case 0x29: return 0x1B                                // Esc
+        case 0x2A: return 0x08                                // Backspace
+        case 0x2B: return 0x09                                // Tab
+        case 0x2C: return 0x20                                // Space
+        case 0x2D: return 0xBD                                // -
+        case 0x2E: return 0xBB                                // =
+        case 0x2F: return 0xDB                                // [
+        case 0x30: return 0xDD                                // ]
+        case 0x31: return 0xDC                                // backslash
+        case 0x33: return 0xBA                                // ;
+        case 0x34: return 0xDE                                // '
+        case 0x35: return 0xC0                                // `
+        case 0x36: return 0xBC                                // ,
+        case 0x37: return 0xBE                                // .
+        case 0x38: return 0xBF                                // /
+        case 0x39: return 0x14                                // Caps Lock
+        case 0x3A...0x45: return UInt(0x70 + (hid - 0x3A))   // F1-F12
+        case 0x49: return 0x2D                                // Insert
+        case 0x4A: return 0x24                                // Home
+        case 0x4B: return 0x21                                // Page Up
+        case 0x4C: return 0x2E                                // Delete
+        case 0x4D: return 0x23                                // End
+        case 0x4E: return 0x22                                // Page Down
+        case 0x4F: return 0x27                                // Right
+        case 0x50: return 0x25                                // Left
+        case 0x51: return 0x28                                // Down
+        case 0x52: return 0x26                                // Up
+        case 0x53: return 0x90                                // Num Lock
+        case 0xE0, 0xE4: return 0x11                          // Ctrl
+        case 0xE1, 0xE5: return 0x10                          // Shift
+        case 0xE2: return 0x12                                // Left Alt
+        case 0xE3, 0xE7: return 0x5B                          // Win
+        default: return nil
+        }
     }
 
     override func layoutSubviews() {
@@ -331,6 +481,9 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldReceive touch: UITouch) -> Bool {
+        // The physical mouse owns input in external pointer mode; touches must
+        // not start emulated clicks or drags behind it.
+        if externalPointerMode { return false }
         if gestureRecognizer is UITapGestureRecognizer || gestureRecognizer is UILongPressGestureRecognizer {
             guard mouseInput?.hasVirtualButton != true else { return false }
             gestureRevisions[ObjectIdentifier(gestureRecognizer)] = mouseInput?.revision ?? 0
@@ -540,6 +693,28 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         if deltaX != 0 || deltaY != 0 {
             onScroll?(point.0, point.1, deltaX, deltaY)
             recognizer.setTranslation(.zero, in: self)
+        }
+    }
+
+    /// Discrete scroll events from a Bluetooth mouse. Each event carries a
+    /// small translation, so the /12 threshold above would round it away.
+    /// Emit one notch per event instead.
+    @objc private func handleMouseWheel(_ recognizer: UIPanGestureRecognizer) {
+        let location = recognizer.location(in: self)
+        switch recognizer.state {
+        case .began:
+            recognizer.setTranslation(.zero, in: self)
+        case .changed:
+            let translation = recognizer.translation(in: self)
+            recognizer.setTranslation(.zero, in: self)
+            guard let point = pointerPoint(for: location) else { return }
+            let horizontal = abs(translation.x) > abs(translation.y)
+            let value = horizontal ? -translation.x : -translation.y
+            guard abs(value) > 0.01 else { return }
+            let notch = value > 0 ? 1 : -1
+            onScroll?(point.0, point.1, horizontal ? notch : 0, horizontal ? 0 : notch)
+        default:
+            break
         }
     }
 

@@ -5,6 +5,8 @@ import Foundation
 import Security
 import UIKit
 
+private let kExternalPointerModeKey = "crossdesk.mobile.external-pointer-mode"
+
 enum MouseControlMode: String, CaseIterable, Identifiable {
     case relative
     case absolute
@@ -334,6 +336,15 @@ final class RemoteSessionModel: NSObject, ObservableObject, CrossDeskRTCBridgeDe
     @Published private(set) var customServer = SignalServerConfiguration.loadCustom()
     @Published var mouseControlMode = MouseControlMode.saved {
         didSet { mouseControlMode.save() }
+    }
+    /// External keyboard/mouse mode: touch gestures stop emulating a mouse so
+    /// a Bluetooth mouse and trackpad keep full control of the remote desktop.
+    @Published var externalPointerMode =
+        UserDefaults.standard.bool(forKey: kExternalPointerModeKey) {
+        didSet {
+            UserDefaults.standard.set(externalPointerMode,
+                                      forKey: kExternalPointerModeKey)
+        }
     }
     @Published var videoAdaptationPolicy = VideoAdaptationPolicy.saved {
         didSet { videoAdaptationPolicy.save() }

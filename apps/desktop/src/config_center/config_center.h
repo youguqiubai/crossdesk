@@ -136,7 +136,11 @@ class ConfigCenter {
   std::atomic<bool> desktop_realtime_rate_control_{true};
   VIDEO_ENCODE_FORMAT video_encode_format_ = VIDEO_ENCODE_FORMAT::H264;
   TURN_MODE turn_mode_ = TURN_MODE::AUTO_UDP_TCP;
-  static constexpr int kDefaultDirectStartBitrateBps = 2'500'000;
+  // Raised from 2.5 Mbps: desktop 1440p60 at the old value starved text edges
+  // and produced visible smear while scrolling. A ~25 Mbps uplink sustains this
+  // with room for the congestion controller to climb further. The relay default
+  // stays low because a TURN path has much less headroom.
+  static constexpr int kDefaultDirectStartBitrateBps = 6'000'000;
   static constexpr int kDefaultRelayStartBitrateBps = 1'500'000;
   int direct_start_bitrate_bps_ = kDefaultDirectStartBitrateBps;
   int relay_start_bitrate_bps_ = kDefaultRelayStartBitrateBps;

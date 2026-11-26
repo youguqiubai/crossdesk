@@ -10,12 +10,26 @@
 #include <Windows.h>
 
 #include <cstdint>
+#include <cstring>
 
 namespace crossdesk {
 
 // Called for a visible foreign window whose full bounds intersect a cover.
 // Inspect it on every check: an OSD helper can grow into a content window.
 inline bool IsNonObstructingPrivacyWindow(HWND window, const RECT& bounds) {
+  // Windows Ink's handwriting canvas (TabTip) is a full-screen, transparent
+  // input layer that lives above the ordinary desktop bands. It never displays
+  // desktop content, but it is neither a zero-alpha layered window nor a 1x1
+  // helper, so the generic rules below would report it as an obstruction and
+  // block the privacy cover. The class name carries a CLSID suffix, so this has
+  // to be a prefix match. Tradeoff: strokes drawn with a pen while the cover is
+  // up are not detected, which no desktop privacy scenario depends on.
+  char class_name[128] = {};
+  if (GetClassNameA(window, class_name, sizeof(class_name)) > 0 &&
+      std::strncmp(class_name, "ShellHandwritingCanvas", 22) == 0) {
+    return true;
+  }
+
   const auto styles = GetWindowLongPtrW(window, GWL_EXSTYLE);
   if (!(styles & WS_EX_LAYERED)) return false;
 

@@ -55,6 +55,7 @@ class ScreenCapturerWin : public ScreenCapturer {
 
   std::vector<DisplayInfo> GetDisplayInfoList() override;
   int GetCurrentMonitorIndex() const override;
+  std::string CurrentBackendName() const override;
   bool OwnsNativeCursor() const { return native_cursor_owned_.load(); }
   void SetNativeCursorPolicy(bool default_enabled, bool current_enabled) {
     native_cursor_default_.store(default_enabled);
@@ -72,7 +73,8 @@ class ScreenCapturerWin : public ScreenCapturer {
   // Serializes backend replacement (secure-desktop recovery runs on the
   // management thread) against the public entry points that dereference it.
   // Lock order: impl_mutex_ before alias_mutex_; never the reverse.
-  std::mutex impl_mutex_;
+  // mutable: CurrentBackendName() is const but must inspect impl_ safely.
+  mutable std::mutex impl_mutex_;
   bool unattended_host_ = false;
   bool PrepareUnattendedDisplay();
   void UpdateNativeCursor(ScreenCapturer* backend);

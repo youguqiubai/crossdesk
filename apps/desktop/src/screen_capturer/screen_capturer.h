@@ -8,6 +8,7 @@
 #define _SCREEN_CAPTURER_H_
 
 #include <functional>
+#include <string>
 
 #include "display_info.h"
 #include "minirtc.h"
@@ -49,6 +50,10 @@ class ScreenCapturer {
   // Append virtual methods to preserve existing WGC plugin vtable slots.
   // Backends without index reporting retain the default primary index.
   virtual int GetCurrentMonitorIndex() const { return 0; }
+  // Name of the backend that is capturing right now ("DXGI" / "WGC" / "GDI"),
+  // for the diagnostics surface. Empty when the platform or a plugin backend
+  // does not report one, so callers must handle an empty result.
+  virtual std::string CurrentBackendName() const { return {}; }
 };
 }  // namespace crossdesk
 #endif

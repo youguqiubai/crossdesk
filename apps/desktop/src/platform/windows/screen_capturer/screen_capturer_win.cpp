@@ -1000,6 +1000,15 @@ int ScreenCapturerWin::GetCurrentMonitorIndex() const {
   return monitor_index_.load(std::memory_order_relaxed);
 }
 
+std::string ScreenCapturerWin::CurrentBackendName() const {
+  std::lock_guard<std::mutex> lock(impl_mutex_);
+  if (!impl_) return {};
+  if (dynamic_cast<ScreenCapturerDxgi*>(impl_.get())) return "DXGI";
+  if (dynamic_cast<WgcPluginCapturer*>(impl_.get())) return "WGC";
+  if (dynamic_cast<ScreenCapturerGdi*>(impl_.get())) return "GDI";
+  return {};
+}
+
 void ScreenCapturerWin::BuildCanonicalFromImpl() {
   std::lock_guard<std::mutex> lock(alias_mutex_);
   handle_to_canonical_index_.clear();
@@ -1297,6 +1306,10 @@ void ScreenCapturerWin::CheckCaptureProgress(ULONGLONG now) {
     // Exhausting the sequence starts a fresh ordered recovery cycle.
     const bool started = StartPreferredBackend(monitor, failed) || StartPreferredBackend(monitor);
     NotifyPrivacyCapture(started);
+    // Name the backend that actually took over, so a silent downgrade is
+    // visible in the log instead of only through "started ..." messages.
+    LOG_INFO("Capture backend after fallback: {}",
+             started ? CurrentBackendName() : std::string("none"));
     if (!started) ReleaseNativeCursor();
   }
   last_capture_retry_tick_ = now;

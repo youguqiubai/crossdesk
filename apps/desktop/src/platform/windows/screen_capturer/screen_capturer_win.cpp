@@ -1296,6 +1296,13 @@ void ScreenCapturerWin::CheckCaptureProgress(ULONGLONG now) {
   if (auto* dxgi = dynamic_cast<ScreenCapturerDxgi*>(impl_.get());
       dxgi && (!last_capture_retry_tick_ || last_progress > last_capture_retry_tick_)) {
     LOG_WARN("Windows capturer: DXGI has no frame; refreshing the selected output");
+    // Probe only: report what the system itself produced, so an idle desktop
+    // (and a privacy cover) can be distinguished from a stalled capture.
+    LOG_WARN(
+        "Windows capturer: DXGI stall probe produced_frames={} privacy_engaged={} "
+        "stalled_ms={}",
+        dxgi->ProducedFrameCount(), privacy_ && privacy_->Engaged() ? 1 : 0,
+        now - last_progress);
     dxgi->RequestTopologyRefresh();
   } else {
     const auto failed = CaptureBackendMethod(impl_.get());

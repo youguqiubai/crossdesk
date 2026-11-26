@@ -48,6 +48,7 @@ class ScreenCapturerDxgi : public ScreenCapturer {
 
   int SwitchTo(int monitor_index) override;
   int ResetToInitialMonitor() override;
+  uint64_t ProducedFrameCount() const override;
 
   // Rebuild the selected output on the capture thread, never on the caller.
   void RequestTopologyRefresh() { topology_refresh_requested_.store(true); }
@@ -95,7 +96,8 @@ class ScreenCapturerDxgi : public ScreenCapturer {
   std::thread thread_;
   int fps_ = 60;
   cb_desktop_data callback_ = nullptr;
-  std::mutex switch_mutex_;
+  // mutable: ProducedFrameCount() is const but must read duplication_ safely.
+  mutable std::mutex switch_mutex_;
 
   unsigned char* nv12_frame_ = nullptr;
   int nv12_width_ = 0;

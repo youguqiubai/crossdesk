@@ -7,6 +7,7 @@
 #ifndef _SCREEN_CAPTURER_H_
 #define _SCREEN_CAPTURER_H_
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -54,6 +55,10 @@ class ScreenCapturer {
   // for the diagnostics surface. Empty when the platform or a plugin backend
   // does not report one, so callers must handle an empty result.
   virtual std::string CurrentBackendName() const { return {}; }
+  // Cumulative frames the system has produced for this output, as reported by
+  // the backend. Zero means "not available". Diagnostic only: it lets a caller
+  // tell "the desktop is idle" apart from "capture stopped delivering".
+  virtual uint64_t ProducedFrameCount() const { return 0; }
 };
 }  // namespace crossdesk
 #endif

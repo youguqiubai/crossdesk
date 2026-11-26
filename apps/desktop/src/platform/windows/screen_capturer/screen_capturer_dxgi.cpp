@@ -174,6 +174,14 @@ int ScreenCapturerDxgi::ResetToInitialMonitor() {
   return SwitchTo(0);
 }
 
+uint64_t ScreenCapturerDxgi::ProducedFrameCount() const {
+  std::lock_guard<std::mutex> lock(switch_mutex_);
+  if (!duplication_) return 0;
+  DXGI_FRAME_STATISTICS stats{};
+  if (FAILED(duplication_->GetFrameStatistics(&stats))) return 0;
+  return stats.AccumulatedFrames;
+}
+
 bool ScreenCapturerDxgi::EnumerateDisplays() {
   ScopedWindowsPhysicalCoordinates physical_coordinates;
   // Factories cache adapter topology. Refresh the factory as well as outputs.

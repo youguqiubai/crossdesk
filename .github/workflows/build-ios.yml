@@ -113,6 +113,20 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # MiniRTC keeps HEVC behind TARGET_OS_OSX. The decoders, encoders and RTP
+      # paths are already complete on iOS, so this patch only widens the
+      # capability checks to __APPLE__. Remove it once the change lands
+      # upstream in deps/submodules/minirtc.
+      - name: Apply iOS HEVC support patch
+        shell: bash
+        run: |
+          PATCH_FILE="${GITHUB_WORKSPACE}/patches/ios-hevc.patch"
+          if [[ ! -f "${PATCH_FILE}" ]]; then
+            echo "::error::Missing ${PATCH_FILE}"
+            exit 1
+          fi
+          git -C deps/submodules/minirtc apply --verbose "${PATCH_FILE}"
+
       - name: Select corresponding source tag
         shell: bash
         run: |
@@ -359,9 +373,22 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "${PACKAGE_DIR}" "${PACKAGE_FILE}"
           echo "PACKAGE_FILE=${PACKAGE_FILE}" >> "${GITHUB_ENV}"
 
+          # Unsigned IPA for local re-signing (Sideloadly, Xcode, Apple
+          # Configurator). Payload/ is the layout every signing tool expects;
+          # no signature is applied here.
+          IPA_ROOT="${RUNNER_TEMP}/crossdesk-ipa"
+          IPA_FILE="${GITHUB_WORKSPACE}/crossdesk-ios-arm64-unsigned-${VERSION_NUM}.ipa"
+          rm -rf "${IPA_ROOT}"
+          mkdir -p "${IPA_ROOT}/Payload"
+          cp -R "${APP_PATH}" "${IPA_ROOT}/Payload/"
+          (cd "${IPA_ROOT}" && zip -qry "${IPA_FILE}" Payload)
+          echo "IPA_FILE=${IPA_FILE}" >> "${GITHUB_ENV}"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v6
         with:
           name: crossdesk-ios-arm64-unsigned-${{ env.VERSION_NUM }}
-          path: ${{ env.PACKAGE_FILE }}
+          path: |
+            ${{ env.PACKAGE_FILE }}
+            ${{ env.IPA_FILE }}
           if-no-files-found: error

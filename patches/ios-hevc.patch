@@ -1,0 +1,78 @@
+diff --git a/src/media/video/decode/video_decoder_factory.cpp b/src/media/video/decode/video_decoder_factory.cpp
+index 941e677..e45652e 100644
+--- a/src/media/video/decode/video_decoder_factory.cpp
++++ b/src/media/video/decode/video_decoder_factory.cpp
+@@ -85,7 +85,7 @@ std::unique_ptr<MediaCodec> VideoDecoderFactory::CreateVideoDecoder(
+     if (D3D11VideoDecoder::IsSupported(codec_type))
+       return std::make_unique<D3D11VideoDecoder>(clock, native_video_output,
+                                                  codec_type);
+-#elif defined(__APPLE__) && TARGET_OS_OSX
++#elif defined(__APPLE__)
+     if (CheckIsHardwareAccelerationSupported(codec_type))
+       return std::make_unique<VideoToolboxDecoder>(clock, native_video_output,
+                                                    codec_type);
+@@ -192,7 +192,7 @@ bool VideoDecoderFactory::CheckIsHardwareAccelerationSupported(
+ #endif
+ #if defined(_WIN32) || defined(_WIN64)
+     return D3D11VideoDecoder::IsSupported(codec_type);
+-#elif defined(__APPLE__) && TARGET_OS_OSX
++#elif defined(__APPLE__)
+     return VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC);
+ #else
+     return false;
+diff --git a/src/media/video/encode/video_encoder_factory.cpp b/src/media/video/encode/video_encoder_factory.cpp
+index ebdd62b..9e0189b 100644
+--- a/src/media/video/encode/video_encoder_factory.cpp
++++ b/src/media/video/encode/video_encoder_factory.cpp
+@@ -67,7 +67,7 @@ std::unique_ptr<MediaCodec> VideoEncoderFactory::CreateVideoEncoder(
+ #if defined(_WIN32) || defined(_WIN64)
+     if (WmfVideoEncoder::IsSupported(codec_type))
+       return std::make_unique<WmfVideoEncoder>(clock, codec_type);
+-#elif defined(__APPLE__) && TARGET_OS_OSX
++#elif defined(__APPLE__)
+     if (CheckIsHardwareAccelerationSupported(codec_type))
+       return std::make_unique<VideoToolboxEncoder>(clock, codec_type);
+ #endif
+@@ -192,7 +192,7 @@ bool VideoEncoderFactory::CheckIsHardwareAccelerationSupported(
+ #endif
+ #if defined(_WIN32) || defined(_WIN64)
+     return WmfVideoEncoder::IsSupported(codec_type);
+-#elif defined(__APPLE__) && TARGET_OS_OSX
++#elif defined(__APPLE__)
+     return VideoToolboxEncoder::IsHardwareHevcSupported();
+ #else
+     return false;
+diff --git a/src/media/video/encode/video_toolbox/video_toolbox_encoder.h b/src/media/video/encode/video_toolbox/video_toolbox_encoder.h
+index 7628485..b471750 100644
+--- a/src/media/video/encode/video_toolbox/video_toolbox_encoder.h
++++ b/src/media/video/encode/video_toolbox/video_toolbox_encoder.h
+@@ -25,9 +25,7 @@ class VideoToolboxEncoder : public MediaCodec {
+                                VideoCodecType codec = VideoCodecType::H264);
+   virtual ~VideoToolboxEncoder();
+ 
+-#if TARGET_OS_OSX
+   static bool IsHardwareHevcSupported();
+-#endif
+ 
+   int Init(const MediaCodecConfig& config) override;
+ 
+diff --git a/src/media/video/encode/video_toolbox/video_toolbox_encoder.mm b/src/media/video/encode/video_toolbox/video_toolbox_encoder.mm
+index 1391221..abd7fca 100644
+--- a/src/media/video/encode/video_toolbox/video_toolbox_encoder.mm
++++ b/src/media/video/encode/video_toolbox/video_toolbox_encoder.mm
+@@ -935,7 +935,6 @@ void VideoToolboxEncoder::Impl::HandleEncodedSampleBuffer(
+ VideoToolboxEncoder::VideoToolboxEncoder(std::shared_ptr<SystemClock> clock, VideoCodecType codec)
+     : impl_(std::make_shared<Impl>(std::move(clock), codec)) {}
+ 
+-#if TARGET_OS_OSX
+ bool VideoToolboxEncoder::IsHardwareHevcSupported() {
+   @autoreleasepool {
+     NSDictionary* spec = @{
+@@ -950,7 +949,6 @@ bool VideoToolboxEncoder::IsHardwareHevcSupported() {
+     return supported;
+   }
+ }
+-#endif
+ 
+ VideoToolboxEncoder::~VideoToolboxEncoder() = default;
+ 

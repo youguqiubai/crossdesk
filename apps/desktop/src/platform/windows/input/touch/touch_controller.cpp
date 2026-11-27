@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "log.h"
+#include "rd_log.h"
 
 namespace crossdesk {
 namespace {

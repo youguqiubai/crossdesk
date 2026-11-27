@@ -101,6 +101,7 @@ int TouchController::EnsureDeviceLocked() {
     LOG_WARN("Touch injection device creation failed, err={}", GetLastError());
     return -1;
   }
+  LOG_INFO("Touch injection ready: max_contacts={}", kMaxContacts);
   return 0;
 }
 

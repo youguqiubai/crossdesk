@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -656,10 +657,21 @@ InputOutcome GuiRuntime::ApplyRemoteInput(const std::string& remote_id,
   } else if (remote_action.type == ControlType::touch) {
     // Native touch replaces synthesised mouse events only while the controller
     // chose the passthrough mode; the controller falls back on its own if the
-    // host cannot inject touch.
-    return devices_.SendTouchCommand(remote_action.t, display)
-               ? InputOutcome::applied
-               : InputOutcome::failed;
+    // host cannot inject touch. The counter keeps this readable at 60 Hz while
+    // still proving whether a snapshot ever arrived.
+    static std::atomic<uint32_t> touch_log_counter{0};
+    const uint32_t touch_seq = touch_log_counter.fetch_add(1);
+    if (touch_seq % 120 == 0) {
+      LOG_INFO("Touch snapshot received: contacts={}, display={}, seq={}",
+               remote_action.t.count, display, touch_seq);
+    }
+    const bool touch_applied =
+        devices_.SendTouchCommand(remote_action.t, display);
+    if (!touch_applied) {
+      LOG_WARN("Touch injection failed: contacts={}, display={}",
+               remote_action.t.count, display);
+    }
+    return touch_applied ? InputOutcome::applied : InputOutcome::failed;
   } else if (remote_action.type == ControlType::keyboard) {
     return keyboard_.ApplyRemoteEvent(remote_id, remote_action);
   } else if (remote_action.type == ControlType::keyboard_state) {

@@ -1336,7 +1336,12 @@ final class RemoteSessionModel: NSObject, ObservableObject, CrossDeskRTCBridgeDe
 
     /// Forwards a full snapshot of the fingers that are down to the host.
     func sendTouches(_ points: [NSNumber]) {
-        guard hasNetworkConsent, isConnected, !privacyScreen.unlockNotice else { return }
+        guard hasNetworkConsent, isConnected, !privacyScreen.unlockNotice else {
+            NSLog("[CrossDesk] sendTouches blocked consent=%d connected=%d unlock=%d",
+                  hasNetworkConsent ? 1 : 0, isConnected ? 1 : 0,
+                  privacyScreen.unlockNotice ? 1 : 0)
+            return
+        }
         bridge.sendTouches(points)
     }
 

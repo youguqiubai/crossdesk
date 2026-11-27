@@ -995,6 +995,11 @@ MiniRtcParams MakeParams(const RTCState &state, const std::string &user_id,
 }
 
 - (void)sendTouches:(NSArray<NSNumber *> *)points {
+  static NSUInteger send_log_counter = 0;
+  if (send_log_counter++ % 60 == 0) {
+    NSLog(@"[CrossDesk] bridge sendTouches n=%lu",
+          (unsigned long)(points.count / 3));
+  }
   [self sendMessage:TouchJSON(points) reliable:YES stream:kMouseStream];
 }
 

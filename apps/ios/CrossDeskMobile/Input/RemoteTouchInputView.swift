@@ -215,6 +215,7 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
     var inputMode: RemoteInputMode = .touch {
         didSet {
             guard oldValue != inputMode else { return }
+            NSLog("[CrossDesk] inputMode -> %@", String(describing: inputMode))
             let gesturesEnabled = inputMode == .touch
             for recognizer in touchRecognizers {
                 recognizer.isEnabled = gesturesEnabled
@@ -247,6 +248,7 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
     /// id across moves. Snapshot ordering is irrelevant to the host.
     private var activeTouches: [ObjectIdentifier: (id: Int, point: CGPoint)] = [:]
     private var nextTouchID = 0
+    private var publishLogCounter = 0
 
     private var fallbackCursorPoint: (Float, Float) = (0.5, 0.5)
     private var relativeCursorPoint: (Float, Float) {
@@ -399,9 +401,12 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard inputMode == .passthrough else {
+            NSLog("[CrossDesk] touchesBegan ignored, mode=%@",
+                  String(describing: inputMode))
             super.touchesBegan(touches, with: event)
             return
         }
+        NSLog("[CrossDesk] touchesBegan n=%d", touches.count)
         for touch in touches {
             guard activeTouches.count < kMaxPassthroughTouches,
                   let id = allocateTouchID() else { break }
@@ -462,10 +467,17 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         payload.reserveCapacity(activeTouches.count * 3)
         // Stable order keeps the wire format deterministic for debugging.
         for entry in activeTouches.values.sorted(by: { $0.id < $1.id }) {
-            guard let point = normalized(entry.point) else { continue }
+            guard let point = normalized(entry.point) else {
+                NSLog("[CrossDesk] publish drop id=%d outside video", entry.id)
+                continue
+            }
             payload.append(NSNumber(value: entry.id))
             payload.append(NSNumber(value: point.0))
             payload.append(NSNumber(value: point.1))
+        }
+        publishLogCounter += 1
+        if publishLogCounter % 60 == 1 {
+            NSLog("[CrossDesk] publish n=%d", payload.count / 3)
         }
         onTouches?(payload)
     }

@@ -40,6 +40,16 @@ enum RemoteInputMode: String, CaseIterable, Identifiable {
 
   private static let defaultsKey = kInputModeKey
 
+  /// Cycles through the modes in the order a viewer is most likely to want:
+  /// emulated mouse first, then raw touch, then a physical mouse.
+  var next: RemoteInputMode {
+    switch self {
+    case .touch: return .passthrough
+    case .passthrough: return .external
+    case .external: return .touch
+    }
+  }
+
   static var saved: RemoteInputMode {
     get {
       guard let raw = UserDefaults.standard.string(forKey: defaultsKey),

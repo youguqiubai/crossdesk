@@ -1297,24 +1297,15 @@ private struct FloatingSessionMenu: View {
                                 ? .absolute : .relative
                         }
                     )
-                    Menu {
-                        ForEach(RemoteInputMode.allCases) { mode in
-                            Button {
-                                releaseMouse()
-                                session.inputMode = mode
-                            } label: {
-                                if session.inputMode == mode {
-                                    Label(mode.title, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.title)
-                                }
-                            }
+                    FloatingControlButton(
+                        title: session.inputMode.title,
+                        symbol: "hand.tap",
+                        selected: session.inputMode != .touch,
+                        action: {
+                            releaseMouse()
+                            session.inputMode = session.inputMode.next
                         }
-                    } label: {
-                        FloatingControlLabel(title: session.inputMode.title,
-                                             symbol: "hand.tap")
-                    }
-                    .buttonStyle(.plain)
+                    )
 
                     Menu {
                         ForEach(Array(session.displays.enumerated()), id: \.offset) { index, name in

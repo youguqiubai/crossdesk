@@ -834,6 +834,12 @@ function setup_targets()
             add_includedirs("apps/desktop/src/platform/windows/service",
                 "apps/desktop/src/platform/windows/screen_capturer")
             add_links("Advapi32", "Wtsapi32", "Ole32", "Userenv")
+            if is_mode("release") then
+                -- crossdesk_ui is generated with /GL, so every link has to run
+                -- the whole-program optimiser. Without it the linker reports
+                -- the mismatch and the build stops.
+                add_ldflags("/LTCG")
+            end
             add_deps("wgc_plugin", "crossdesk_service", "crossdesk_session_helper")
             add_files(crossdesk_windows_resource, {defines = windows_resource_defines})
         elseif is_os("linux") then

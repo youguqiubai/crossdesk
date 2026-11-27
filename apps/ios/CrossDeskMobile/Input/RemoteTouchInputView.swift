@@ -120,10 +120,10 @@ struct RemoteTouchInputView: UIViewRepresentable {
 
 /// Keep the initial finger spacing until a pinch is recognized, including short pinches.
 private final class FingerPinchGestureRecognizer: UIGestureRecognizer {
-    // A parallel two-finger swipe changes the finger span by a few points as
-    // the fingers drift. The threshold has to stay above that drift or the
-    // swipe is mistaken for the start of a pinch.
-    private let spanTolerance: CGFloat = 12
+    // A parallel two-finger swipe changes the finger span by more than a few
+    // points as the fingers drift apart, so the threshold has to sit well
+    // above that drift or the swipe is mistaken for the start of a pinch.
+    private let spanTolerance: CGFloat = 24
     private var fingers: [UITouch] = []
     private var referenceSpan: CGFloat = 0
 

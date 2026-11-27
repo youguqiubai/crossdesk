@@ -1827,87 +1827,43 @@ private struct RemoteIBeamShape: Shape {
 }
 
 
-/// Rolling connection-quality chart for the statistics panel.
+/// Rolling latency chart for the statistics panel.
 ///
 /// The table below shows instantaneous values, which makes a brief stutter look
-/// identical to a link that has been degrading for a while. One selectable
-/// metric keeps the drawing readable inside a floating panel.
+/// identical to a link that has been degrading for a while. Latency is the
+/// metric that explains a stutter, so it is the only series drawn.
 private struct RemoteNetworkChart: View {
-    enum Metric: String, CaseIterable, Identifiable {
-        case latency, bitrate, loss
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .latency: return NSLocalizedString("延迟", comment: "")
-            case .bitrate: return NSLocalizedString("码率", comment: "")
-            case .loss: return NSLocalizedString("丢包", comment: "")
-            }
-        }
-
-        var unit: String {
-            switch self {
-            case .latency: return "ms"
-            case .bitrate: return "Mbps"
-            case .loss: return "%"
-            }
-        }
-
-        var color: Color {
-            switch self {
-            case .latency: return .orange
-            case .bitrate: return .blue
-            case .loss: return .red
-            }
-        }
-
-        func value(_ sample: NetworkSample) -> Double {
-            switch self {
-            case .latency: return sample.rttMilliseconds
-            case .bitrate: return sample.bitrateMegabits
-            case .loss: return sample.lossPercent
-            }
-        }
-    }
-
     let samples: [NetworkSample]
-    @State private var metric: Metric = .latency
+
+    private let tint = Color.orange
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 10) {
-                ForEach(Metric.allCases) { item in
-                    Button {
-                        metric = item
-                    } label: {
-                        Text(item.title)
-                            .font(.caption2.weight(metric == item ? .semibold : .regular))
-                            .foregroundStyle(metric == item ? item.color : Color.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(NSLocalizedString("延迟", comment: ""))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
                 Spacer(minLength: 0)
                 if let last = samples.last {
-                    Text(String(format: "%.0f %@", metric.value(last), metric.unit))
+                    Text(String(format: "%.0f ms", last.rttMilliseconds))
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(metric.color)
+                        .foregroundStyle(tint)
                 }
             }
             if samples.count < 2 {
                 Text(NSLocalizedString("正在采样…", comment: ""))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 62)
+                    .frame(maxWidth: .infinity, minHeight: 56)
             } else {
                 Chart(samples) { sample in
                     AreaMark(x: .value("t", sample.time),
-                             y: .value(metric.title, metric.value(sample)))
-                        .foregroundStyle(metric.color.opacity(0.12))
+                             y: .value("ms", sample.rttMilliseconds))
+                        .foregroundStyle(tint.opacity(0.12))
                         .interpolationMethod(.catmullRom)
                     LineMark(x: .value("t", sample.time),
-                             y: .value(metric.title, metric.value(sample)))
-                        .foregroundStyle(metric.color)
+                             y: .value("ms", sample.rttMilliseconds))
+                        .foregroundStyle(tint)
                         .interpolationMethod(.catmullRom)
                 }
                 .chartXAxis(.hidden)
@@ -1918,7 +1874,7 @@ private struct RemoteNetworkChart: View {
                             .font(.system(size: 8))
                     }
                 }
-                .frame(height: 62)
+                .frame(height: 56)
             }
         }
     }

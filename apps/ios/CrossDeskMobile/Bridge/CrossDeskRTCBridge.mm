@@ -39,6 +39,7 @@ using crossdesk::RemoteAction;
 using crossdesk::ServiceCommandFlag;
 using crossdesk::kFileAckMagic;
 using crossdesk::kAudioStream;
+using crossdesk::kMaxTouchPoints;
 using crossdesk::kClipboardStream;
 using crossdesk::kControlStream;
 using crossdesk::kDataStream;

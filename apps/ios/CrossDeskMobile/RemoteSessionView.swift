@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -238,6 +239,7 @@ struct RemoteSessionView: View {
             }
         }
         .onAppear {
+            session.startNetworkSampling()
             mouseInput.send = { x, y, flag, wheel in
                 cursorPosition = CGPoint(x: CGFloat(x), y: CGFloat(y))
                 if flag == 1 || flag == 3 { systemKeyboardContext.remoteFocusWillChange() }
@@ -256,6 +258,7 @@ struct RemoteSessionView: View {
             }
         }
         .onDisappear {
+            session.stopNetworkSampling()
             mouseInput.releaseAll()
             mouseInput.send = nil
             keyboardInputVisible = false
@@ -1280,6 +1283,7 @@ private struct FloatingSessionMenu: View {
             FloatingVideoSettings(session: session)
         } else if page == .networkStats {
             FloatingNetworkStatistics(snapshot: displayedNetworkSnapshot,
+                                      history: session.networkHistory,
                                       frameSize: displayedFrameSize,
                                       endpointsExpanded: $endpointsExpanded)
         } else {
@@ -1451,11 +1455,13 @@ private struct ScrollingCodecName: View {
 
 private struct FloatingNetworkStatistics: View {
     let snapshot: RemoteNetworkSnapshot
+    let history: [NetworkSample]
     let frameSize: CGSize
     @Binding var endpointsExpanded: Bool
 
     var body: some View {
         VStack(spacing: 10) {
+            RemoteNetworkChart(samples: history)
             VStack(spacing: 0) {
                 trafficRow("", inbound: NSLocalizedString("接收", comment: ""), outbound: NSLocalizedString("发送", comment: ""), loss: NSLocalizedString("丢包率", comment: ""))
                     .foregroundStyle(.secondary)
@@ -1817,5 +1823,103 @@ private struct RemoteIBeamShape: Shape {
         path.move(to: CGPoint(x: rect.minX + 5, y: bottom))
         path.addLine(to: CGPoint(x: rect.maxX - 5, y: bottom))
         return path
+    }
+}
+
+
+/// Rolling connection-quality chart for the statistics panel.
+///
+/// The table below shows instantaneous values, which makes a brief stutter look
+/// identical to a link that has been degrading for a while. One selectable
+/// metric keeps the drawing readable inside a floating panel.
+private struct RemoteNetworkChart: View {
+    enum Metric: String, CaseIterable, Identifiable {
+        case latency, bitrate, loss
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .latency: return NSLocalizedString("延迟", comment: "")
+            case .bitrate: return NSLocalizedString("码率", comment: "")
+            case .loss: return NSLocalizedString("丢包", comment: "")
+            }
+        }
+
+        var unit: String {
+            switch self {
+            case .latency: return "ms"
+            case .bitrate: return "Mbps"
+            case .loss: return "%"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .latency: return .orange
+            case .bitrate: return .blue
+            case .loss: return .red
+            }
+        }
+
+        func value(_ sample: NetworkSample) -> Double {
+            switch self {
+            case .latency: return sample.rttMilliseconds
+            case .bitrate: return sample.bitrateMegabits
+            case .loss: return sample.lossPercent
+            }
+        }
+    }
+
+    let samples: [NetworkSample]
+    @State private var metric: Metric = .latency
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 10) {
+                ForEach(Metric.allCases) { item in
+                    Button {
+                        metric = item
+                    } label: {
+                        Text(item.title)
+                            .font(.caption2.weight(metric == item ? .semibold : .regular))
+                            .foregroundStyle(metric == item ? item.color : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+                if let last = samples.last {
+                    Text(String(format: "%.0f %@", metric.value(last), metric.unit))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(metric.color)
+                }
+            }
+            if samples.count < 2 {
+                Text(NSLocalizedString("正在采样…", comment: ""))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 62)
+            } else {
+                Chart(samples) { sample in
+                    AreaMark(x: .value("t", sample.time),
+                             y: .value(metric.title, metric.value(sample)))
+                        .foregroundStyle(metric.color.opacity(0.12))
+                        .interpolationMethod(.catmullRom)
+                    LineMark(x: .value("t", sample.time),
+                             y: .value(metric.title, metric.value(sample)))
+                        .foregroundStyle(metric.color)
+                        .interpolationMethod(.catmullRom)
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
+                        AxisGridLine()
+                        AxisValueLabel()
+                            .font(.system(size: 8))
+                    }
+                }
+                .frame(height: 62)
+            }
+        }
     }
 }

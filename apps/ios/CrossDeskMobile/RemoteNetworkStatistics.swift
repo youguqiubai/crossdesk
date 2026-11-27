@@ -137,3 +137,16 @@ struct RemoteNetworkStatistics {
         )
     }
 }
+
+/// One point in the connection-quality history.
+///
+/// The panel already shows instantaneous numbers, which makes a stutter look
+/// like a single bad reading. Keeping a short rolling window lets the chart
+/// show whether the link degraded over time or recovered.
+struct NetworkSample: Identifiable {
+    let id = UUID()
+    let time: Date
+    let rttMilliseconds: Double
+    let bitrateMegabits: Double
+    let lossPercent: Double
+}

@@ -1696,6 +1696,41 @@ final class RemoteSessionModel: NSObject, ObservableObject, CrossDeskRTCBridgeDe
         return networkStatistics.displaySnapshot(at: ProcessInfo.processInfo.systemUptime)
     }
 
+    /// Rolling history backing the connection-quality chart. Sampling runs on a
+    /// timer instead of every statistics callback so the window covers a fixed
+    /// span of time regardless of how often reports arrive.
+    @Published private(set) var networkHistory: [NetworkSample] = []
+    private var networkSampleTimer: Timer?
+
+    func startNetworkSampling() {
+        guard networkSampleTimer == nil else { return }
+        networkSampleTimer = Timer.scheduledTimer(withTimeInterval: 1.0,
+                                                  repeats: true) { [weak self] _ in
+            self?.recordNetworkSample()
+        }
+    }
+
+    func stopNetworkSampling() {
+        networkSampleTimer?.invalidate()
+        networkSampleTimer = nil
+    }
+
+    private func recordNetworkSample() {
+        guard isConnected else { return }
+        let snapshot = networkSnapshot
+        let rtt = snapshot.rttMilliseconds ?? snapshot.report?.rttMilliseconds ?? 0
+        let bitrate = Double(snapshot.report?.video.inboundBitrate ?? 0) / 1_000_000
+        let loss = Double(snapshot.report?.video.lossRate ?? 0) * 100
+        networkHistory.append(
+            NetworkSample(time: Date(),
+                          rttMilliseconds: max(0, rtt),
+                          bitrateMegabits: max(0, bitrate),
+                          lossPercent: max(0, loss)))
+        if networkHistory.count > 60 {
+            networkHistory.removeFirst(networkHistory.count - 60)
+        }
+    }
+
     var videoStatus: String {
         if frameCount > 0 {
             return String(format: NSLocalizedString("视频 %1$@×%2$@ · %3$@ 帧", comment: ""), String(describing: Int(frameSize.width)), String(describing: Int(frameSize.height)), String(describing: frameCount))

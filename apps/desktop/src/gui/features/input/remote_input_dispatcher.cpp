@@ -20,6 +20,7 @@ RemoteInputDispatcher::~RemoteInputDispatcher() { Stop(); }
 
 bool RemoteInputDispatcher::Accepts(const RemoteAction& action) {
   return action.type == ControlType::mouse ||
+         action.type == ControlType::touch ||
          action.type == ControlType::keyboard ||
          action.type == ControlType::keyboard_state ||
          action.type == ControlType::text_input ||

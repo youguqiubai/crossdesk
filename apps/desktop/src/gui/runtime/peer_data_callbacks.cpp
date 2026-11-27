@@ -134,6 +134,18 @@ void PeerEventHandler::OnReceiveDataBuffer(
   GuiRuntime* runtime = &handler->owner_;
 
   std::string source_id = std::string(src_id, src_id_size);
+  // Diagnostic for the touch passthrough path: the controller reports a healthy
+  // payload and peer, so log the frame here to show whether it ever arrives.
+  if (size > 0 && size < 200) {
+    const std::string peek(data, std::min<size_t>(size, 64));
+    if (peek.find("\"type\":17") != std::string::npos) {
+      static std::atomic<uint32_t> touch_rx_log{0};
+      if (touch_rx_log++ % 60 == 0) {
+        LOG_INFO("Touch payload received: stream={}, size={}, body={}",
+                 source_id, size, peek);
+      }
+    }
+  }
   const auto remote_id = handler->ConnectionKey(user_id, user_id_size);
   if (source_id == runtime->control_data_label_ &&
       runtime->HandleDeviceTrustMessage(remote_id, handler, data, size)) return;

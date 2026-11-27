@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -239,7 +238,6 @@ struct RemoteSessionView: View {
             }
         }
         .onAppear {
-            session.startNetworkSampling()
             mouseInput.send = { x, y, flag, wheel in
                 cursorPosition = CGPoint(x: CGFloat(x), y: CGFloat(y))
                 if flag == 1 || flag == 3 { systemKeyboardContext.remoteFocusWillChange() }
@@ -258,7 +256,6 @@ struct RemoteSessionView: View {
             }
         }
         .onDisappear {
-            session.stopNetworkSampling()
             mouseInput.releaseAll()
             mouseInput.send = nil
             keyboardInputVisible = false
@@ -1283,7 +1280,6 @@ private struct FloatingSessionMenu: View {
             FloatingVideoSettings(session: session)
         } else if page == .networkStats {
             FloatingNetworkStatistics(snapshot: displayedNetworkSnapshot,
-                                      history: session.networkHistory,
                                       frameSize: displayedFrameSize,
                                       endpointsExpanded: $endpointsExpanded)
         } else {
@@ -1455,13 +1451,11 @@ private struct ScrollingCodecName: View {
 
 private struct FloatingNetworkStatistics: View {
     let snapshot: RemoteNetworkSnapshot
-    let history: [NetworkSample]
     let frameSize: CGSize
     @Binding var endpointsExpanded: Bool
 
     var body: some View {
         VStack(spacing: 10) {
-            RemoteNetworkChart(samples: history)
             VStack(spacing: 0) {
                 trafficRow("", inbound: NSLocalizedString("接收", comment: ""), outbound: NSLocalizedString("发送", comment: ""), loss: NSLocalizedString("丢包率", comment: ""))
                     .foregroundStyle(.secondary)
@@ -1823,59 +1817,5 @@ private struct RemoteIBeamShape: Shape {
         path.move(to: CGPoint(x: rect.minX + 5, y: bottom))
         path.addLine(to: CGPoint(x: rect.maxX - 5, y: bottom))
         return path
-    }
-}
-
-
-/// Rolling latency chart for the statistics panel.
-///
-/// The table below shows instantaneous values, which makes a brief stutter look
-/// identical to a link that has been degrading for a while. Latency is the
-/// metric that explains a stutter, so it is the only series drawn.
-private struct RemoteNetworkChart: View {
-    let samples: [NetworkSample]
-
-    private let tint = Color.orange
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(NSLocalizedString("延迟", comment: ""))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
-                Spacer(minLength: 0)
-                if let last = samples.last {
-                    Text(String(format: "%.0f ms", last.rttMilliseconds))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(tint)
-                }
-            }
-            if samples.count < 2 {
-                Text(NSLocalizedString("正在采样…", comment: ""))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-            } else {
-                Chart(samples) { sample in
-                    AreaMark(x: .value("t", sample.time),
-                             y: .value("ms", sample.rttMilliseconds))
-                        .foregroundStyle(tint.opacity(0.12))
-                        .interpolationMethod(.catmullRom)
-                    LineMark(x: .value("t", sample.time),
-                             y: .value("ms", sample.rttMilliseconds))
-                        .foregroundStyle(tint)
-                        .interpolationMethod(.catmullRom)
-                }
-                .chartXAxis(.hidden)
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
-                        AxisGridLine()
-                        AxisValueLabel()
-                            .font(.system(size: 8))
-                    }
-                }
-                .frame(height: 56)
-            }
-        }
     }
 }

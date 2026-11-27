@@ -1007,8 +1007,14 @@ MiniRtcParams MakeParams(const RTCState &state, const std::string &user_id,
   static NSUInteger send_log_counter = 0;
   const std::string json = TouchJSON(points);
   if (send_log_counter++ % 60 == 0) {
-    NSLog(@"[CrossDesk] sendTouches n=%lu json=%.140s",
-          (unsigned long)(points.count / 3), json.c_str());
+    // The encoded payload is privacy-redacted in device logs, so report its
+    // length instead: zero means to_json rejected it and nothing was sent.
+    // peer tells the two failure modes apart, since sendMessage drops the
+    // frame silently when the controller peer is not up yet.
+    const bool peer_ready = _state->controller_peer != nullptr;
+    NSLog(@"[CrossDesk] sendTouches n=%lu bytes=%lu peer=%d",
+          (unsigned long)(points.count / 3), (unsigned long)json.size(),
+          peer_ready ? 1 : 0);
   }
   if (json.empty()) return;
   [self sendMessage:json reliable:YES stream:kMouseStream];

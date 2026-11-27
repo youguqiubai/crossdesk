@@ -29,16 +29,15 @@
 
 struct SDL_AudioStream;
 
-#ifdef _WIN32
-class TouchController;
-#endif
-
 namespace crossdesk {
 
 class GuiRuntime;
 class DeviceControllerFactory;
 class ScreenCapturerFactory;
 class ScreenCapturer;
+#ifdef _WIN32
+class TouchController;
+#endif
 
 // Owns media capture/playback and remote input devices for the active GUI
 // session. GuiRuntime supplies application intent; this class handles device

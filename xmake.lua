@@ -14,9 +14,11 @@ if is_plat("windows") then
     -- the native applications; a setting inside apps/cli does not reach them.
     set_runtimes("MT")
     -- Touch passthrough uses CreateSyntheticPointerDevice and
-    -- InjectSyntheticPointerInput, which the SDK only declares for Windows 10
-    -- 1809 and later. Without this the default surface hides them.
-    add_defines("NTDDI_VERSION=0x0A000005")
+    -- InjectSyntheticPointerInput. The SDK guards those declarations on both
+    -- NTDDI_VERSION and WINVER, so both have to name Windows 10 1809 or the
+    -- symbols stay hidden even though the API exists at runtime.
+    add_defines("NTDDI_VERSION=0x0A000005", "WINVER=0x0A00",
+                "_WIN32_WINNT=0x0A00")
 end
 add_requires("nlohmann_json 3.11.3")
 

@@ -283,25 +283,24 @@ std::string MouseJSON(float x, float y, int wheel, int flag) {
 }
 
 std::string TouchJSON(NSArray<NSNumber *> *points) {
-  RemoteAction action{};
-  action.type = ControlType::touch;
-  const NSUInteger count = points.count / 3;
-  for (NSUInteger index = 0; index < count && index < kMaxTouchPoints;
-       ++index) {
-    // Clamp here as well: a coordinate that rounds to just outside 0-1 makes
-    // RemoteAction::to_json reject the whole snapshot and return an empty
-    // string, which would leave the host with no touch at all.
-    action.t.points[index].id = [points[index * 3] intValue];
-    action.t.points[index].x =
-        std::clamp([points[index * 3 + 1] floatValue], 0.0f, 1.0f);
-    action.t.points[index].y =
-        std::clamp([points[index * 3 + 2] floatValue], 0.0f, 1.0f);
-    ++action.t.count;
+  const NSUInteger count =
+      std::min<NSUInteger>(points.count / 3, kMaxTouchPoints);
+  if (count == 0) return {};
+
+  // Built by hand instead of through RemoteAction::to_json. On this toolchain
+  // the serialiser emitted {"touch":{"p":[]}} even though the snapshot held a
+  // contact, so the host received an empty list and injected nothing.
+  std::string json = "{\"type\":17,\"touch\":{\"p\":[";
+  char entry[64];
+  for (NSUInteger index = 0; index < count; ++index) {
+    const int identifier = [points[index * 3] intValue];
+    const float x = std::clamp([points[index * 3 + 1] floatValue], 0.0f, 1.0f);
+    const float y = std::clamp([points[index * 3 + 2] floatValue], 0.0f, 1.0f);
+    std::snprintf(entry, sizeof(entry), "%s[%d,%.6f,%.6f]", index ? "," : "",
+                  identifier, static_cast<double>(x), static_cast<double>(y));
+    json += entry;
   }
-  std::string json = action.to_json();
-  if (json.empty()) {
-    NSLog(@"[CrossDesk] TouchJSON rejected count=%lu", (unsigned long)count);
-  }
+  json += "]}}";
   return json;
 }
 

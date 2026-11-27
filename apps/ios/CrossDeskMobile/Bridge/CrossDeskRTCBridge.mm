@@ -288,12 +288,21 @@ std::string TouchJSON(NSArray<NSNumber *> *points) {
   const NSUInteger count = points.count / 3;
   for (NSUInteger index = 0; index < count && index < kMaxTouchPoints;
        ++index) {
+    // Clamp here as well: a coordinate that rounds to just outside 0-1 makes
+    // RemoteAction::to_json reject the whole snapshot and return an empty
+    // string, which would leave the host with no touch at all.
     action.t.points[index].id = [points[index * 3] intValue];
-    action.t.points[index].x = [points[index * 3 + 1] floatValue];
-    action.t.points[index].y = [points[index * 3 + 2] floatValue];
+    action.t.points[index].x =
+        std::clamp([points[index * 3 + 1] floatValue], 0.0f, 1.0f);
+    action.t.points[index].y =
+        std::clamp([points[index * 3 + 2] floatValue], 0.0f, 1.0f);
     ++action.t.count;
   }
-  return action.to_json();
+  std::string json = action.to_json();
+  if (json.empty()) {
+    NSLog(@"[CrossDesk] TouchJSON rejected count=%lu", (unsigned long)count);
+  }
+  return json;
 }
 
 std::string KeyJSON(NSUInteger key_code, bool is_down) {
@@ -996,11 +1005,13 @@ MiniRtcParams MakeParams(const RTCState &state, const std::string &user_id,
 
 - (void)sendTouches:(NSArray<NSNumber *> *)points {
   static NSUInteger send_log_counter = 0;
+  const std::string json = TouchJSON(points);
   if (send_log_counter++ % 60 == 0) {
-    NSLog(@"[CrossDesk] bridge sendTouches n=%lu",
-          (unsigned long)(points.count / 3));
+    NSLog(@"[CrossDesk] sendTouches n=%lu json=%.140s",
+          (unsigned long)(points.count / 3), json.c_str());
   }
-  [self sendMessage:TouchJSON(points) reliable:YES stream:kMouseStream];
+  if (json.empty()) return;
+  [self sendMessage:json reliable:YES stream:kMouseStream];
 }
 
 - (void)sendWindowsKeyCode:(NSUInteger)keyCode isDown:(BOOL)isDown {

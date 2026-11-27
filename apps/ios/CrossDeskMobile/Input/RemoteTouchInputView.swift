@@ -327,6 +327,16 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         wheel.delegate = self
         addGestureRecognizer(wheel)
 
+        // Three fingers pan a zoomed image. Two fingers always scroll, even
+        // when zoomed, because gating scrolling on the zoom level left a
+        // zoomed-in view with no way to scroll at all.
+        let threeFingerPan = UIPanGestureRecognizer(target: self,
+                                                    action: #selector(handleThreeFingerPan(_:)))
+        threeFingerPan.minimumNumberOfTouches = 3
+        threeFingerPan.maximumNumberOfTouches = 3
+        threeFingerPan.delegate = self
+        addGestureRecognizer(threeFingerPan)
+
         // A Bluetooth mouse wheel arrives as discrete scroll events, which the
         // two-finger pan above never receives. Handle it separately so an
         // external mouse can scroll without any touch input.
@@ -341,7 +351,7 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
                                              action: #selector(handleHover(_:)))
         addGestureRecognizer(hover)
 
-        touchRecognizers = [tap, rightTap, drag, heldDrag, pinch, trackpadPinch, wheel]
+        touchRecognizers = [tap, rightTap, drag, heldDrag, pinch, trackpadPinch, wheel, threeFingerPan]
     }
 
     required init?(coder: NSCoder) {
@@ -777,19 +787,15 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
 
     @objc private func handleWheel(_ recognizer: UIPanGestureRecognizer) {
         guard mouseInput?.hasVirtualButton != true else { viewportPanActive = false; return }
-        if viewportScale > 1.001 || pinchActive {
+        // While a pinch is in progress the two fingers are part of the zoom
+        // gesture, so they keep panning the image. Otherwise two fingers always
+        // scroll, zoomed in or not.
+        if pinchActive {
             switch recognizer.state {
             case .began:
-                viewportPanActive = pinchActive || renderRect()?.contains(
-                    recognizer.location(in: self)
-                ) == true
+                viewportPanActive = true
                 recognizer.setTranslation(.zero, in: self)
             case .changed:
-                if !viewportPanActive {
-                    viewportPanActive = pinchActive || renderRect()?.contains(
-                        recognizer.location(in: self)
-                    ) == true
-                }
                 guard viewportPanActive else { return }
                 let translation = recognizer.translation(in: self)
                 recognizer.setTranslation(.zero, in: self)
@@ -813,6 +819,28 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         if deltaX != 0 || deltaY != 0 {
             onScroll?(point.0, point.1, deltaX, deltaY)
             recognizer.setTranslation(.zero, in: self)
+        }
+    }
+
+    /// Pans a zoomed image. Only meaningful above 1x; at fit scale there is
+    /// nothing to move and the gesture is ignored.
+    @objc private func handleThreeFingerPan(_ recognizer: UIPanGestureRecognizer) {
+        guard viewportScale > 1.001 else { return }
+        switch recognizer.state {
+        case .began:
+            recognizer.setTranslation(.zero, in: self)
+        case .changed:
+            let translation = recognizer.translation(in: self)
+            recognizer.setTranslation(.zero, in: self)
+            let proposedOffset = CGSize(
+                width: viewportOffset.width + translation.x,
+                height: viewportOffset.height + translation.y
+            )
+            viewportOffset = constrainedViewportOffset(proposedOffset,
+                                                       scale: viewportScale)
+            publishViewport()
+        default:
+            break
         }
     }
 

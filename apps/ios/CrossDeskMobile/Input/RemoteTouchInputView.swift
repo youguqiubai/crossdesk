@@ -120,7 +120,10 @@ struct RemoteTouchInputView: UIViewRepresentable {
 
 /// Keep the initial finger spacing until a pinch is recognized, including short pinches.
 private final class FingerPinchGestureRecognizer: UIGestureRecognizer {
-    private let spanTolerance: CGFloat = 4
+    // A parallel two-finger swipe changes the finger span by a few points as
+    // the fingers drift. The threshold has to stay above that drift or the
+    // swipe is mistaken for the start of a pinch.
+    private let spanTolerance: CGFloat = 12
     private var fingers: [UITouch] = []
     private var referenceSpan: CGFloat = 0
 
@@ -787,30 +790,11 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
 
     @objc private func handleWheel(_ recognizer: UIPanGestureRecognizer) {
         guard mouseInput?.hasVirtualButton != true else { viewportPanActive = false; return }
-        // While a pinch is in progress the two fingers are part of the zoom
-        // gesture, so they keep panning the image. Otherwise two fingers always
-        // scroll, zoomed in or not.
-        if pinchActive {
-            switch recognizer.state {
-            case .began:
-                viewportPanActive = true
-                recognizer.setTranslation(.zero, in: self)
-            case .changed:
-                guard viewportPanActive else { return }
-                let translation = recognizer.translation(in: self)
-                recognizer.setTranslation(.zero, in: self)
-                let proposedOffset = CGSize(
-                    width: viewportOffset.width + translation.x,
-                    height: viewportOffset.height + translation.y
-                )
-                viewportOffset = constrainedViewportOffset(proposedOffset,
-                                                           scale: viewportScale)
-                publishViewport()
-            default:
-                viewportPanActive = false
-            }
-            return
-        }
+        // Two fingers only ever scroll. Panning moved to three fingers because a
+        // pinch in progress used to capture the gesture, and a parallel swipe
+        // changes the finger span just enough to be read as a pinch start,
+        // which turned scrolling into image panning.
+        if pinchActive { return }
 
         guard let point = pointerPoint(for: recognizer.location(in: self)) else { return }
         let translation = recognizer.translation(in: self)

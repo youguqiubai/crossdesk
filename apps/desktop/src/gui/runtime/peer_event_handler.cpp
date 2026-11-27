@@ -537,8 +537,11 @@ void PeerEventHandler::DispatchConnectionStatus(MiniRtcConnectionStatus status,
       runtime->is_server_mode_ = true;
       runtime->devices_.StartSpeakerCapturer();
       runtime->remote_client_id_ = remote_id;
-      if (!runtime->managed_host_frontend_ || handler->IsDirect())
-        runtime->start_mouse_controller_ = true;
+      // The local injector is needed even in service mode: whenever the user
+      // desktop is the active one, injection runs in this process rather than
+      // through the service. Gating it on the frontend kind left
+      // mouse_controller_ empty and every input silently dropped.
+      runtime->start_mouse_controller_ = true;
     }
   }
 }

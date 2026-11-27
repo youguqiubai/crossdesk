@@ -878,6 +878,12 @@ bool SessionDeviceManager::SendMouseCommand(const RemoteAction &action,
   if (mouse_controller_) {
     return mouse_controller_->SendMouseCommand(action, selected_display) == 0;
   }
+  // Silence here used to hide a missing controller for an entire session, so
+  // report it once instead of dropping every event without a trace.
+  static std::atomic<bool> logged_missing_controller{false};
+  if (!logged_missing_controller.exchange(true)) {
+    LOG_WARN("Mouse command dropped: controller not started");
+  }
   return false;
 }
 

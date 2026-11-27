@@ -9,6 +9,7 @@
 #include <remote_action.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <utility>
@@ -890,7 +891,11 @@ bool SessionDeviceManager::SendTouchCommand(const Touch &touch,
   if (!touch_controller_) {
     auto controller = std::make_unique<TouchController>();
     if (controller->Init() != 0) {
-      LOG_INFO("Touch injection is unavailable; controller keeps using mouse");
+      // The controller asks again on every snapshot, so say it once.
+      static std::atomic<bool> logged_unavailable{false};
+      if (!logged_unavailable.exchange(true)) {
+        LOG_INFO("Touch injection is unavailable; controller keeps using mouse");
+      }
       return false;
     }
     touch_controller_ = std::move(controller);

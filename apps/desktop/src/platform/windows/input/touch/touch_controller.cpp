@@ -192,9 +192,15 @@ int TouchController::SendTouchCommand(const Touch& touch,
 
   if (!infos.empty() &&
       !inject_(device_, infos.data(), static_cast<UINT32>(infos.size()))) {
-    LOG_WARN("Touch injection failed, err={}, contacts={}", GetLastError(),
-             infos.size());
-    active_.swap(next);
+    // Do not remember a state the host never received: the next snapshot
+    // rebuilds every contact instead of sending corrections against contacts
+    // Windows has no record of.
+    static uint32_t fail_log_counter = 0;
+    if (fail_log_counter++ % 120 == 0) {
+      LOG_WARN("Touch injection failed, err={}, contacts={}", GetLastError(),
+               infos.size());
+    }
+    active_.clear();
     return -1;
   }
 

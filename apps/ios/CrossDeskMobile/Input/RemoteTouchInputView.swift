@@ -468,7 +468,12 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         // Stable order keeps the wire format deterministic for debugging.
         for entry in activeTouches.values.sorted(by: { $0.id < $1.id }) {
             guard let point = normalized(entry.point) else {
-                NSLog("[CrossDesk] publish drop id=%d outside video", entry.id)
+                // A finger that drifted into the letterbox is dropped; log it
+                // sparsely so a drag does not flood the device log.
+                if publishLogCounter % 60 == 0 {
+                    NSLog("[CrossDesk] publish drop id=%d outside video",
+                          entry.id)
+                }
                 continue
             }
             payload.append(NSNumber(value: entry.id))

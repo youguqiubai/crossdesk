@@ -20,12 +20,21 @@ constexpr UINT32 kContactPressure = 512;
 // The layouts below mirror POINTER_INFO / POINTER_TOUCH_INFO /
 // POINTER_TYPE_INFO. A mismatch would corrupt the injected frames, so the
 // sizes are checked at compile time instead of trusting the field order.
+#if defined(_WIN64)
 static_assert(sizeof(SyntheticPointerInfo) == 96,
               "POINTER_INFO layout changed");
 static_assert(sizeof(SyntheticTouchInfo) == 144,
               "POINTER_TOUCH_INFO layout changed");
 static_assert(sizeof(SyntheticPointerTypeInfo) == 152,
               "POINTER_TYPE_INFO layout changed");
+#else
+static_assert(sizeof(SyntheticPointerInfo) == 88,
+              "POINTER_INFO layout changed");
+static_assert(sizeof(SyntheticTouchInfo) == 136,
+              "POINTER_TOUCH_INFO layout changed");
+static_assert(sizeof(SyntheticPointerTypeInfo) == 144,
+              "POINTER_TYPE_INFO layout changed");
+#endif
 
 void FillTouchInfo(SyntheticTouchInfo* touch, UINT32 pointer_id,
                    UINT32 flags, POINT pixel) {
@@ -85,7 +94,8 @@ int TouchController::EnsureDeviceLocked() {
     LOG_WARN("Touch injection unavailable on this Windows version");
     return -1;
   }
-  device_ = create_device_(kPointerTypeTouch, kMaxContacts,
+  device_ = create_device_(kPointerTypeTouch,
+                           static_cast<ULONG>(kMaxContacts),
                            kPointerFeedbackDefault);
   if (device_ == nullptr) {
     LOG_WARN("Touch injection device creation failed, err={}", GetLastError());

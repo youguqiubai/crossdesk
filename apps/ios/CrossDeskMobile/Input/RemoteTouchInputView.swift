@@ -1,6 +1,10 @@
 import SwiftUI
 import UIKit
 
+/// Windows accepts at most 10 simultaneous contacts, and the wire format only
+/// carries ids 0-9, so the viewer caps passthrough at the same number.
+private let kMaxPassthroughTouches = 10
+
 enum RemoteVideoGeometry {
     private static func pixelAligned(_ rect: CGRect) -> CGRect {
         let scale = max(UIScreen.main.scale, 1)
@@ -74,7 +78,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
     let keyboardGeometry: RemoteKeyboardGeometry?
     let videoSize: CGSize
     let controlMode: MouseControlMode
-    let externalPointerMode: Bool
+    let inputMode: RemoteInputMode
     let remoteCursorPosition: CGPoint?
     let remoteCursorPositionRevision: UInt64
     let viewportScale: CGFloat
@@ -86,6 +90,9 @@ struct RemoteTouchInputView: UIViewRepresentable {
     let rightClick: (Float, Float) -> Void
     let scroll: (Float, Float, Int, Int) -> Void
     let key: (UInt, Bool) -> Void
+    /// Full snapshot of the contacts that are down, as [id, x, y, ...] with
+    /// normalized coordinates. An empty array lifts every contact.
+    let touches: ([NSNumber]) -> Void
 
     func makeUIView(context: Context) -> RemoteTouchSurface {
         RemoteTouchSurface()
@@ -96,7 +103,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
         view.keyboardGeometry = keyboardGeometry
         view.videoSize = videoSize
         view.controlMode = controlMode
-        view.externalPointerMode = externalPointerMode
+        view.inputMode = inputMode
         view.setViewport(scale: viewportScale, offset: viewportOffset)
         view.onViewportChanged = viewportChanged
         view.onMove = move
@@ -105,6 +112,7 @@ struct RemoteTouchInputView: UIViewRepresentable {
         view.onRightClick = rightClick
         view.onScroll = scroll
         view.onKey = key
+        view.onTouches = touches
         view.synchronizeRemoteCursor(remoteCursorPosition,
                                      revision: remoteCursorPositionRevision)
     }
@@ -195,25 +203,35 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
     var onScroll: ((Float, Float, Int, Int) -> Void)?
     var onViewportChanged: ((CGFloat, CGSize) -> Void)?
 
-    /// External keyboard/mouse mode. iPadOS forwards mouse clicks and wheel
-    /// events through this view as well, and the touch gestures that emulate
-    /// them compete for the same events. Disabling the touch recognizers keeps
-    /// the physical mouse authoritative while hover tracking stays active.
-    var externalPointerMode = false {
+    /// How the viewer's fingers reach the host.
+    ///
+    /// - touch: gestures emulate a mouse.
+    /// - passthrough: raw contacts go to the host, which runs its own gesture
+    ///   engine (swipe scrolls, pinch zooms). Emulation must stay off or the
+    ///   two would fight over the same fingers.
+    /// - external: a physical mouse and keyboard drive the host; iPadOS also
+    ///   forwards mouse clicks and wheel events through this view, so touch
+    ///   gestures have to be disabled for the physical mouse to be authoritative.
+    var inputMode: RemoteInputMode = .touch {
         didSet {
-            guard oldValue != externalPointerMode else { return }
+            guard oldValue != inputMode else { return }
+            let gesturesEnabled = inputMode == .touch
             for recognizer in touchRecognizers {
-                recognizer.isEnabled = !externalPointerMode
+                recognizer.isEnabled = gesturesEnabled
             }
             relativePanActive = false
             heldDragPoint = nil
             heldDragLastLocation = nil
             viewportPanActive = false
-            if externalPointerMode {
+            if inputMode == .external {
                 becomeFirstResponder()
             } else {
                 winKeyDown = false
                 resignFirstResponder()
+            }
+            if oldValue == .passthrough {
+                activeTouches.removeAll()
+                onTouches?([])
             }
         }
     }
@@ -221,8 +239,14 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
     /// remote desktop, so keys are forwarded verbatim instead of typing into a
     /// local text field.
     var onKey: ((UInt, Bool) -> Void)?
+    /// Touch snapshots in passthrough mode.
+    var onTouches: (([NSNumber]) -> Void)?
     private var winKeyDown = false
     private var touchRecognizers: [UIGestureRecognizer] = []
+    /// Contacts currently down, keyed by touch identity so a finger keeps its
+    /// id across moves. Snapshot ordering is irrelevant to the host.
+    private var activeTouches: [ObjectIdentifier: (id: Int, point: CGPoint)] = [:]
+    private var nextTouchID = 0
 
     private var fallbackCursorPoint: (Float, Float) = (0.5, 0.5)
     private var relativeCursorPoint: (Float, Float) {
@@ -322,19 +346,19 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var canBecomeFirstResponder: Bool { externalPointerMode }
+    override var canBecomeFirstResponder: Bool { inputMode == .external }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         // becomeFirstResponder() fails before the view joins a window, so the
         // mode change is re-applied once it does.
-        if window != nil && externalPointerMode && !isFirstResponder {
+        if window != nil && inputMode == .external && !isFirstResponder {
             becomeFirstResponder()
         }
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        guard externalPointerMode else {
+        guard inputMode == .external else {
             super.pressesBegan(presses, with: event)
             return
         }
@@ -349,7 +373,7 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        guard externalPointerMode else {
+        guard inputMode == .external else {
             super.pressesEnded(presses, with: event)
             return
         }
@@ -365,6 +389,85 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
 
     override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         pressesEnded(presses, with: event)
+    }
+
+    // MARK: - Direct touch passthrough
+
+    // In passthrough mode the contacts are forwarded verbatim instead of being
+    // interpreted locally. Each message carries every contact that is down, so
+    // the host can rebuild the exact finger set without tracking deltas.
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard inputMode == .passthrough else {
+            super.touchesBegan(touches, with: event)
+            return
+        }
+        for touch in touches {
+            guard activeTouches.count < kMaxPassthroughTouches,
+                  let id = allocateTouchID() else { break }
+            activeTouches[ObjectIdentifier(touch)] = (id,
+                                                      touch.location(in: self))
+        }
+        publishTouches()
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard inputMode == .passthrough else {
+            super.touchesMoved(touches, with: event)
+            return
+        }
+        for touch in touches {
+            guard var entry = activeTouches[ObjectIdentifier(touch)] else { continue }
+            entry.point = touch.location(in: self)
+            activeTouches[ObjectIdentifier(touch)] = entry
+        }
+        publishTouches()
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard inputMode == .passthrough else {
+            super.touchesEnded(touches, with: event)
+            return
+        }
+        for touch in touches {
+            activeTouches.removeValue(forKey: ObjectIdentifier(touch))
+        }
+        publishTouches()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard inputMode == .passthrough else {
+            super.touchesCancelled(touches, with: event)
+            return
+        }
+        for touch in touches {
+            activeTouches.removeValue(forKey: ObjectIdentifier(touch))
+        }
+        publishTouches()
+    }
+
+    /// Returns the lowest id not currently in use, so a lifted finger's id can
+    /// be reused without confusing the host's contact tracking.
+    private func allocateTouchID() -> Int? {
+        let used = Set(activeTouches.values.map { $0.id })
+        for candidate in 0..<kMaxPassthroughTouches where !used.contains(candidate) {
+            return candidate
+        }
+        return nil
+    }
+
+    private func publishTouches() {
+        guard inputMode == .passthrough else { return }
+        var payload: [NSNumber] = []
+        payload.reserveCapacity(activeTouches.count * 3)
+        // Stable order keeps the wire format deterministic for debugging.
+        for entry in activeTouches.values.sorted(by: { $0.id < $1.id }) {
+            guard let point = normalized(entry.point) else { continue }
+            payload.append(NSNumber(value: entry.id))
+            payload.append(NSNumber(value: point.0))
+            payload.append(NSNumber(value: point.1))
+        }
+        onTouches?(payload)
     }
 
     /// Map a USB HID usage to a Windows virtual-key code. iPadOS delivers
@@ -483,7 +586,7 @@ final class RemoteTouchSurface: UIView, UIGestureRecognizerDelegate {
                            shouldReceive touch: UITouch) -> Bool {
         // The physical mouse owns input in external pointer mode; touches must
         // not start emulated clicks or drags behind it.
-        if externalPointerMode { return false }
+        if inputMode != .touch { return false }
         if gestureRecognizer is UITapGestureRecognizer || gestureRecognizer is UILongPressGestureRecognizer {
             guard mouseInput?.hasVirtualButton != true else { return false }
             gestureRevisions[ObjectIdentifier(gestureRecognizer)] = mouseInput?.revision ?? 0

@@ -197,6 +197,9 @@ typedef struct {
     NS_SWIFT_NAME(sendPointer(x:y:action:));
 - (void)sendScrollX:(float)x y:(float)y deltaX:(NSInteger)deltaX
               deltaY:(NSInteger)deltaY;
+// Full snapshot of the fingers that are down: [id0, x0, y0, id1, x1, y1, ...]
+// with normalized coordinates. An empty array lifts every contact.
+- (void)sendTouches:(NSArray<NSNumber *> *)points;
 - (void)sendWindowsKeyCode:(NSUInteger)keyCode isDown:(BOOL)isDown;
 - (void)sendKeyChord:(NSUInteger)keyCode modifiers:(NSArray<NSNumber *> *)modifiers;
 - (void)sendText:(NSString *)text;

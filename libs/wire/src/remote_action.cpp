@@ -235,6 +235,19 @@ std::string RemoteAction::ToJson(const RemoteAction& action) {
                             {"extended", action.k.extended},
                             {"flag", action.k.flag}};
       break;
+    case ControlType::touch: {
+      if (action.t.count > kMaxTouchPoints) return {};
+      json points = json::array();
+      for (std::size_t index = 0; index < action.t.count; ++index) {
+        const TouchPoint& point = action.t.points[index];
+        if (point.id < 0 || point.id >= 100 || point.x < 0.0f ||
+            point.x > 1.0f || point.y < 0.0f || point.y > 1.0f)
+          return {};
+        points.push_back({point.id, point.x, point.y});
+      }
+      object["touch"] = {{"p", points}};
+      break;
+    }
     case ControlType::keyboard_state: {
       json keys = json::array();
       const std::size_t pressed_count =
@@ -400,6 +413,24 @@ bool RemoteAction::FromJson(const std::string& json_string,
         if (output.text.empty() || output.text.size() > kMaxTextInputBytes ||
             output.text.find('\0') != std::string::npos) return false;
         break;
+      case ControlType::touch: {
+        const auto& points = object.at("touch").at("p");
+        if (!points.is_array() || points.size() > kMaxTouchPoints)
+          return false;
+        output.t.count = static_cast<uint32_t>(points.size());
+        for (std::size_t index = 0; index < points.size(); ++index) {
+          const auto& point = points.at(index);
+          if (!point.is_array() || point.size() != 3) return false;
+          const int id = point.at(0).get<int>();
+          const float x = point.at(1).get<float>();
+          const float y = point.at(2).get<float>();
+          if (id < 0 || id >= 100 || x < 0.0f || x > 1.0f || y < 0.0f ||
+              y > 1.0f)
+            return false;
+          output.t.points[index] = {id, x, y};
+        }
+        break;
+      }
       case ControlType::keyboard:
         output.k.key_value =
             object.at("keyboard").at("key_value").get<std::size_t>();

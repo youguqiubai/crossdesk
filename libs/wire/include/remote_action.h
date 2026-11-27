@@ -36,6 +36,7 @@ enum ControlType {
   video_codec_status = 14,
   display_resolution = 15,
   display_resolution_status = 16,
+  touch = 17,
 };
 
 enum MouseFlag {
@@ -65,6 +66,24 @@ struct Key {
   uint32_t scan_code;
   bool extended;
   KeyFlag flag;
+};
+
+// Direct touch input for hosts that can inject native touch. Each message is a
+// full snapshot of the contacts that are down right now: an empty list means
+// every finger lifted, so no separate up message is needed and a dropped frame
+// cannot leave a contact stuck. Coordinates are normalized to the selected
+// display, matching the mouse coordinate space.
+inline constexpr std::size_t kMaxTouchPoints = 10;
+
+struct TouchPoint {
+  int id;
+  float x;
+  float y;
+};
+
+struct Touch {
+  uint32_t count;
+  TouchPoint points[kMaxTouchPoints];
 };
 
 inline constexpr std::size_t kMaxKeyboardStateKeys = 32;
@@ -207,6 +226,7 @@ struct RemoteAction {
   union {
     Mouse m;
     Key k;
+    Touch t;
     KeyboardState ks;
     CursorState cs;
     HostInfo i;

@@ -5,7 +5,50 @@ import Foundation
 import Security
 import UIKit
 
-private let kExternalPointerModeKey = "crossdesk.mobile.external-pointer-mode"
+private let kInputModeKey = "crossdesk.mobile.input-mode"
+
+/// How the viewer's fingers reach the host.
+enum RemoteInputMode: String, CaseIterable, Identifiable {
+  /// Fingers emulated a mouse: single finger moves, two fingers scroll.
+  case touch
+  /// Fingers are sent as native touch; the host's gesture engine interprets
+  /// swipes and pinches the way it would on a touch-screen PC.
+  case passthrough
+  /// A physical mouse and keyboard drive the host; touch gestures are off.
+  case external
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .touch: return NSLocalizedString("触摸模式", comment: "")
+    case .passthrough: return NSLocalizedString("触控直传", comment: "")
+    case .external: return NSLocalizedString("键鼠模式", comment: "")
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .touch:
+      return NSLocalizedString("手指模拟鼠标：单指移动，双指滚动。", comment: "")
+    case .passthrough:
+      return NSLocalizedString("触摸原样传给电脑，由电脑识别滑动和缩放。", comment: "")
+    case .external:
+      return NSLocalizedString("使用外接鼠标键盘，触摸手势关闭。", comment: "")
+    }
+  }
+
+  private static let defaultsKey = kInputModeKey
+
+  static var saved: RemoteInputMode {
+    get {
+      guard let raw = UserDefaults.standard.string(forKey: defaultsKey),
+            let mode = RemoteInputMode(rawValue: raw) else { return .touch }
+      return mode
+    }
+    set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+  }
+}
 
 enum MouseControlMode: String, CaseIterable, Identifiable {
     case relative
@@ -337,14 +380,10 @@ final class RemoteSessionModel: NSObject, ObservableObject, CrossDeskRTCBridgeDe
     @Published var mouseControlMode = MouseControlMode.saved {
         didSet { mouseControlMode.save() }
     }
-    /// External keyboard/mouse mode: touch gestures stop emulating a mouse so
-    /// a Bluetooth mouse and trackpad keep full control of the remote desktop.
-    @Published var externalPointerMode =
-        UserDefaults.standard.bool(forKey: kExternalPointerModeKey) {
-        didSet {
-            UserDefaults.standard.set(externalPointerMode,
-                                      forKey: kExternalPointerModeKey)
-        }
+    /// How the viewer's fingers reach the host: emulated mouse, native touch
+    /// passthrough, or a physical mouse and keyboard.
+    @Published var inputMode = RemoteInputMode.saved {
+        didSet { RemoteInputMode.saved = inputMode }
     }
     @Published var videoAdaptationPolicy = VideoAdaptationPolicy.saved {
         didSet { videoAdaptationPolicy.save() }
@@ -1293,6 +1332,12 @@ final class RemoteSessionModel: NSObject, ObservableObject, CrossDeskRTCBridgeDe
     func sendKeyState(_ keyCode: UInt, isDown: Bool) {
         guard hasNetworkConsent, isConnected else { return }
         bridge.sendWindowsKeyCode(keyCode, isDown: isDown)
+    }
+
+    /// Forwards a full snapshot of the fingers that are down to the host.
+    func sendTouches(_ points: [NSNumber]) {
+        guard hasNetworkConsent, isConnected, !privacyScreen.unlockNotice else { return }
+        bridge.sendTouches(points)
     }
 
     func rtcBridge(_ bridge: CrossDeskRTCBridge, didChangeIdentityStorageError hasError: Bool) {

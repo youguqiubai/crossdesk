@@ -117,7 +117,7 @@ struct RemoteSessionView: View {
                         keyboardGeometry: keyboardInputVisible ? keyboardGeometry : nil,
                         videoSize: session.displayGeometrySize,
                         controlMode: session.mouseControlMode,
-                        externalPointerMode: session.externalPointerMode,
+                        inputMode: session.inputMode,
                         remoteCursorPosition: session.remoteCursorPosition,
                         remoteCursorPositionRevision: session.remoteCursorPositionRevision,
                         viewportScale: viewport.scale,
@@ -155,6 +155,9 @@ struct RemoteSessionView: View {
                         },
                         key: { keyCode, isDown in
                             session.sendKeyState(keyCode, isDown: isDown)
+                        },
+                        touches: { points in
+                            session.sendTouches(points)
                         }
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -1294,14 +1297,24 @@ private struct FloatingSessionMenu: View {
                                 ? .absolute : .relative
                         }
                     )
-                    FloatingControlButton(
-                        title: session.externalPointerMode
-                            ? NSLocalizedString("键鼠模式", comment: "")
-                            : NSLocalizedString("触控模式", comment: ""),
-                        symbol: "computermouse.fill",
-                        selected: session.externalPointerMode,
-                        action: { session.externalPointerMode.toggle() }
-                    )
+                    Menu {
+                        ForEach(RemoteInputMode.allCases) { mode in
+                            Button {
+                                releaseMouse()
+                                session.inputMode = mode
+                            } label: {
+                                if session.inputMode == mode {
+                                    Label(mode.title, systemImage: "checkmark")
+                                } else {
+                                    Text(mode.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        FloatingControlLabel(title: session.inputMode.title,
+                                             symbol: "hand.tap")
+                    }
+                    .buttonStyle(.plain)
 
                     Menu {
                         ForEach(Array(session.displays.enumerated()), id: \.offset) { index, name in

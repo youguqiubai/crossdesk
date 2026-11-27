@@ -13,6 +13,10 @@ if is_plat("windows") then
     -- Shared wire targets and third-party packages must use the same CRT as
     -- the native applications; a setting inside apps/cli does not reach them.
     set_runtimes("MT")
+    -- Touch passthrough uses CreateSyntheticPointerDevice and
+    -- InjectSyntheticPointerInput, which the SDK only declares for Windows 10
+    -- 1809 and later. Without this the default surface hides them.
+    add_defines("NTDDI_VERSION=0x0A000005")
 end
 add_requires("nlohmann_json 3.11.3")
 

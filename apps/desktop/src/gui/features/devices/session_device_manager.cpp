@@ -24,6 +24,7 @@
 #endif
 #ifdef _WIN32
 #include <nlohmann/json.hpp>
+#include "platform/windows/input/touch/touch_controller.h"
 #include "platform/windows/screen_capturer/screen_capturer_win.h"
 #include "service_host.h"
 #endif
@@ -540,6 +541,15 @@ int SessionDeviceManager::StopMouseController(bool force) {
     delete mouse_controller_;
     mouse_controller_ = nullptr;
   }
+#ifdef _WIN32
+  // Lift any contact the controller left down, so the host does not keep a
+  // phantom finger pressed after the session ends.
+  if (touch_controller_) {
+    touch_controller_->ReleaseAll();
+    touch_controller_->Destroy();
+    touch_controller_.reset();
+  }
+#endif
   return 0;
 }
 
@@ -868,6 +878,30 @@ bool SessionDeviceManager::SendMouseCommand(const RemoteAction &action,
     return mouse_controller_->SendMouseCommand(action, selected_display) == 0;
   }
   return false;
+}
+
+bool SessionDeviceManager::SendTouchCommand(const Touch &touch,
+                                            int selected_display) {
+#ifdef _WIN32
+  // Take the display snapshot before the controller lock: display_info_list()
+  // uses its own mutex and must not nest inside this one.
+  const auto displays = display_info_list();
+  std::lock_guard lock(mouse_controller_mutex_);
+  if (!touch_controller_) {
+    auto controller = std::make_unique<TouchController>();
+    if (controller->Init() != 0) {
+      LOG_INFO("Touch injection is unavailable; controller keeps using mouse");
+      return false;
+    }
+    touch_controller_ = std::move(controller);
+  }
+  return touch_controller_->SendTouchCommand(touch, displays,
+                                             selected_display) == 0;
+#else
+  (void)touch;
+  (void)selected_display;
+  return false;
+#endif
 }
 
 int SessionDeviceManager::SwitchDisplay(int display_id) {

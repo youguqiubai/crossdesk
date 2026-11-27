@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -27,6 +28,10 @@
 #include "speaker_capture_controller.h"
 
 struct SDL_AudioStream;
+
+#ifdef _WIN32
+class TouchController;
+#endif
 
 namespace crossdesk {
 
@@ -93,6 +98,9 @@ public:
   bool SendKeyboardCommand(int key_code, bool is_down, uint32_t scan_code,
                            bool extended);
   bool SendMouseCommand(const RemoteAction &action, int selected_display);
+  // Native touch injection (Windows only). Callers fall back to mouse events
+  // when this reports failure.
+  bool SendTouchCommand(const Touch &touch, int selected_display);
   int SwitchDisplay(int display_id);
   InputOutcome ResetToInitialDisplay();
 
@@ -127,6 +135,9 @@ private:
   SpeakerCaptureController speaker_capture_;
   DeviceControllerFactory *device_controller_factory_ = nullptr;
   MouseController *mouse_controller_ = nullptr;
+#ifdef _WIN32
+  std::unique_ptr<TouchController> touch_controller_;
+#endif
   RemoteMouseButtons remote_mouse_buttons_;
   // Input is executed on a worker while the UI starts/stops this controller.
   std::mutex mouse_controller_mutex_;

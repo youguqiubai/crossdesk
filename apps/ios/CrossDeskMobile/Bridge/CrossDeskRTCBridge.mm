@@ -281,6 +281,20 @@ std::string MouseJSON(float x, float y, int wheel, int flag) {
   return action.to_json();
 }
 
+std::string TouchJSON(NSArray<NSNumber *> *points) {
+  RemoteAction action{};
+  action.type = ControlType::touch;
+  const NSUInteger count = points.count / 3;
+  for (NSUInteger index = 0; index < count && index < kMaxTouchPoints;
+       ++index) {
+    action.t.points[index].id = [points[index * 3] intValue];
+    action.t.points[index].x = [points[index * 3 + 1] floatValue];
+    action.t.points[index].y = [points[index * 3 + 2] floatValue];
+    ++action.t.count;
+  }
+  return action.to_json();
+}
+
 std::string KeyJSON(NSUInteger key_code, bool is_down) {
   RemoteAction action{};
   action.type = ControlType::keyboard;
@@ -977,6 +991,10 @@ MiniRtcParams MakeParams(const RTCState &state, const std::string &user_id,
   const int wheel = raw_delta > 0 ? 1 : -1;
   const std::string message = MouseJSON(x, y, wheel, flag);
   [self sendMessage:message reliable:YES stream:kMouseStream];
+}
+
+- (void)sendTouches:(NSArray<NSNumber *> *)points {
+  [self sendMessage:TouchJSON(points) reliable:YES stream:kMouseStream];
 }
 
 - (void)sendWindowsKeyCode:(NSUInteger)keyCode isDown:(BOOL)isDown {

@@ -639,7 +639,8 @@ InputOutcome GuiRuntime::ApplyRemoteInput(const std::string& remote_id,
   }
 
   const int display = selected_display_.load();
-  if (is_server_mode_ && remote_action.type == ControlType::mouse) {
+  if (is_server_mode_ && (remote_action.type == ControlType::mouse ||
+                          remote_action.type == ControlType::touch)) {
     std::lock_guard lock(remote_pointer_input_mutex_);
     const auto now = std::chrono::steady_clock::now();
     auto [position, first] = last_remote_pointer_input_time_.try_emplace(remote_id, now);
@@ -652,6 +653,13 @@ InputOutcome GuiRuntime::ApplyRemoteInput(const std::string& remote_id,
         [this, &remote_action, display] {
           return InjectRemoteMouse(remote_action, display);
         });
+  } else if (remote_action.type == ControlType::touch) {
+    // Native touch replaces synthesised mouse events only while the controller
+    // chose the passthrough mode; the controller falls back on its own if the
+    // host cannot inject touch.
+    return devices_.SendTouchCommand(remote_action.t, display)
+               ? InputOutcome::applied
+               : InputOutcome::failed;
   } else if (remote_action.type == ControlType::keyboard) {
     return keyboard_.ApplyRemoteEvent(remote_id, remote_action);
   } else if (remote_action.type == ControlType::keyboard_state) {
